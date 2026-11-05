@@ -4,7 +4,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
-import { Activity, ArrowUpLeft, Check, CheckCircle2, Circle, ClipboardList, Clock3, Layers3, Plus, Sparkles, Users, WandSparkles } from 'lucide-react';
+import { Activity, ArrowUpRight, Check, CheckCircle2, Circle, ClipboardList, Clock3, Layers3, Plus, Sparkles, Users, WandSparkles } from 'lucide-react';
 import {
   Route,
   Switch,
@@ -14,19 +14,52 @@ import {
 
 const queryClient = new QueryClient();
 
-type TaskStatus = 'قيد الانتظار' | 'قيد التنفيذ' | 'مكتملة';
+type TaskStatus = 'To do' | 'In progress' | 'Completed';
 type Task = { id: string; title: string; detail: string; owner: string; status: TaskStatus };
 type BoardState = { description: string; tasks: Task[]; members: string[] };
 
+const legacyProjectDescription = 'منصة تساعد طلاب الجامعة على تبادل الكتب والمراجع الدراسية بسهولة، مع نظام بحث ومراجعات موثوقة.';
+const statusTranslations: Record<string, TaskStatus> = {
+  'To do': 'To do',
+  'To Do': 'To do',
+  'In progress': 'In progress',
+  'In Progress': 'In progress',
+  Completed: 'Completed',
+  'قيد الانتظار': 'To do',
+  'قيد التنفيذ': 'In progress',
+  مكتملة: 'Completed',
+};
+const memberTranslations: Record<string, string> = {
+  أحمد: 'Ahmed',
+  سارة: 'Sarah',
+  جود: 'Joud',
+};
+const taskTitleTranslations: Record<string, string> = {
+  'تحليل المتطلبات': 'Requirements analysis',
+  'تحليل المتطلبات وقراءة الواجب': 'Analyze requirements and review the syllabus',
+  'تصميم قاعدة البيانات والواجهات': 'Database and interface design',
+  'تنفيذ النظام': 'System implementation',
+  'برمجة النظام والربط': 'Implement the system and connect its parts',
+};
+const taskDetailTranslations: Record<string, string> = {
+  'تحديد احتياجات المستخدمين ورسم نطاق النسخة الأولى.': 'Define user needs and scope the first release.',
+  'بناء مخطط البيانات وتدفق الشاشات الأساسية.': 'Map the data model and essential user flows.',
+  'تطوير الوظائف الأساسية وربط أجزاء المنصة.': 'Build core features and connect the product.',
+};
+
 const initialBoard: BoardState = {
-  description: 'منصة تساعد طلاب الجامعة على تبادل الكتب والمراجع الدراسية بسهولة، مع نظام بحث ومراجعات موثوقة.',
-  members: ['أحمد', 'سارة', 'جود'],
+  description: 'A platform that helps university students exchange textbooks and study resources, with search and trusted reviews.',
+  members: ['Ahmed', 'Sarah', 'Joud'],
   tasks: [
-    { id: 'req-analysis', title: 'تحليل المتطلبات', detail: 'تحديد احتياجات المستخدمين ورسم نطاق النسخة الأولى.', owner: 'أحمد', status: 'مكتملة' },
-    { id: 'data-interface', title: 'تصميم قاعدة البيانات والواجهات', detail: 'بناء مخطط البيانات وتدفق الشاشات الأساسية.', owner: 'سارة', status: 'قيد التنفيذ' },
-    { id: 'system-build', title: 'تنفيذ النظام', detail: 'تطوير الوظائف الأساسية وربط أجزاء المنصة.', owner: 'جود', status: 'قيد الانتظار' },
+    { id: 'req-analysis', title: 'Requirements analysis', detail: 'Define user needs and scope the first release.', owner: 'Ahmed', status: 'Completed' },
+    { id: 'data-interface', title: 'Database and interface design', detail: 'Map the data model and essential user flows.', owner: 'Sarah', status: 'In progress' },
+    { id: 'system-build', title: 'System implementation', detail: 'Build core features and connect the product.', owner: 'Joud', status: 'To do' },
   ],
 };
+
+function normalizeStatus(status: unknown): TaskStatus | null {
+  return typeof status === 'string' ? statusTranslations[status] ?? null : null;
+}
 
 function readBoard(): BoardState {
   try {
@@ -35,16 +68,25 @@ function readBoard(): BoardState {
     const value: unknown = JSON.parse(raw);
     if (!value || typeof value !== 'object') return initialBoard;
     const candidate = value as Partial<BoardState>;
-    const validStatuses: TaskStatus[] = ['قيد الانتظار', 'قيد التنفيذ', 'مكتملة'];
     const validMembers = Array.isArray(candidate.members) && candidate.members.every((name) => typeof name === 'string');
     const validTasks = Array.isArray(candidate.tasks) && candidate.tasks.every((task) =>
       !!task && typeof task === 'object' &&
       typeof task.id === 'string' && typeof task.title === 'string' &&
       typeof task.detail === 'string' && typeof task.owner === 'string' &&
-      validStatuses.includes(task.status),
+      normalizeStatus(task.status) !== null,
     );
     if (!validMembers || !validTasks || typeof candidate.description !== 'string') return initialBoard;
-    return { description: candidate.description, members: candidate.members as string[], tasks: candidate.tasks as Task[] };
+    return {
+      description: candidate.description === legacyProjectDescription ? initialBoard.description : candidate.description,
+      members: (candidate.members as string[]).map((member) => memberTranslations[member] ?? member),
+      tasks: (candidate.tasks as Task[]).map((task) => ({
+        ...task,
+        title: taskTitleTranslations[task.title] ?? task.title,
+        detail: taskDetailTranslations[task.detail] ?? task.detail,
+        owner: memberTranslations[task.owner] ?? task.owner,
+        status: normalizeStatus(task.status) ?? 'To do',
+      })),
+    };
   } catch {
     return initialBoard;
   }
@@ -58,15 +100,16 @@ function Home() {
   useEffect(() => {
     try { localStorage.setItem('student-project-board-v1', JSON.stringify(board)); } catch { /* Storage may be unavailable in private browsing. */ }
   }, [board]);
-  const completed = board.tasks.filter((task) => task.status === 'مكتملة').length;
-  const inProgress = board.tasks.filter((task) => task.status === 'قيد التنفيذ').length;
+  const completed = board.tasks.filter((task) => task.status === 'Completed').length;
+  const inProgress = board.tasks.filter((task) => task.status === 'In progress').length;
   const progress = board.tasks.length ? Math.round((completed / board.tasks.length) * 100) : 0;
   const sortedTasks = useMemo(() => board.tasks, [board.tasks]);
+  const taskCountLabel = `${board.tasks.length} ${board.tasks.length === 1 ? 'task' : 'tasks'}`;
   function addMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = memberInput.trim();
-    if (!name) { setMemberError('أدخل اسم العضو أولاً.'); return; }
-    if (board.members.some((member) => member.toLocaleLowerCase() === name.toLocaleLowerCase())) { setMemberError('هذا الاسم موجود ضمن الفريق بالفعل.'); return; }
+    if (!name) { setMemberError('Enter a member name first.'); return; }
+    if (board.members.some((member) => member.toLocaleLowerCase() === name.toLocaleLowerCase())) { setMemberError('This name is already on the team.'); return; }
     setBoard((current) => ({ ...current, members: [...current.members, name] }));
     setMemberInput('');
     setMemberError('');
@@ -75,78 +118,78 @@ function Home() {
     setBoard((current) => ({
       ...current,
       tasks: [
-        { id: 'req-analysis', title: 'تحليل المتطلبات', detail: 'تحديد احتياجات المستخدمين ورسم نطاق النسخة الأولى.', owner: current.members[0] ?? '', status: 'قيد الانتظار' },
-        { id: 'data-interface', title: 'تصميم قاعدة البيانات والواجهات', detail: 'بناء مخطط البيانات وتدفق الشاشات الأساسية.', owner: current.members[1] ?? '', status: 'قيد الانتظار' },
-        { id: 'system-build', title: 'تنفيذ النظام', detail: 'تطوير الوظائف الأساسية وربط أجزاء المنصة.', owner: current.members[2] ?? '', status: 'قيد الانتظار' },
+        { id: 'req-analysis', title: 'Requirements analysis', detail: 'Define user needs and scope the first release.', owner: current.members[0] ?? '', status: 'To do' },
+        { id: 'data-interface', title: 'Database and interface design', detail: 'Map the data model and essential user flows.', owner: current.members[1] ?? '', status: 'To do' },
+        { id: 'system-build', title: 'System implementation', detail: 'Build core features and connect the product.', owner: current.members[2] ?? '', status: 'To do' },
       ],
     }));
-    setDemoNote('تم إنشاء مهام نموذجية محلياً. يمكنك تعديل المسؤول والحالة مباشرة.');
+    setDemoNote('Demo tasks created locally. You can update each owner and status below.');
   }
   return (
-    <div className="workspace" dir="rtl">
+    <div className="workspace" dir="ltr">
       <aside className="sidebar">
-        <div className="brand"><div className="brand-mark"><Layers3 size={21} /></div><div><strong>مِحور</strong><span>مساحة فريقك</span></div></div>
-        <div className="side-label">مساحة العمل</div>
-        <div className="side-current"><span className="side-dot" /><div><strong>مشروع الهاكاثون</strong><small>الفريق الطلابي · مساحة خاصة</small></div><ArrowUpLeft size={16} /></div>
-        <div className="side-label side-label-team">الفريق</div>
+        <div className="brand"><div className="brand-mark"><Layers3 size={21} /></div><div><strong>Mihwar</strong><span>Your team workspace</span></div></div>
+        <div className="side-label">WORKSPACE</div>
+        <div className="side-current"><span className="side-dot" /><div><strong>Hackathon project</strong><small>Student team · Private workspace</small></div><ArrowUpRight size={16} /></div>
+        <div className="side-label side-label-team">TEAM</div>
         <div className="side-members">
-          {board.members.length ? board.members.map((member, index) => <div className="side-member" key={`${member}-${index}`} data-testid={`member-sidebar-${index}`}><span className={`avatar avatar-${index % 4}`}>{member.trim().charAt(0)}</span><span>{member}</span><i /></div>) : <p className="side-empty">أضفوا أعضاء فريقكم للبدء.</p>}
+          {board.members.length ? board.members.map((member, index) => <div className="side-member" key={`${member}-${index}`} data-testid={`member-sidebar-${index}`}><span className={`avatar avatar-${index % 4}`}>{member.trim().charAt(0)}</span><span>{member}</span><i /></div>) : <p className="side-empty">Add teammates to get started.</p>}
         </div>
-        <div className="sidebar-foot"><div className="foot-icon"><Activity size={17} /></div><div><strong>كل خطوة تقرّبكم</strong><small>من فكرة إلى أثر</small></div></div>
+        <div className="sidebar-foot"><div className="foot-icon"><Activity size={17} /></div><div><strong>Every step moves you forward</strong><small>From idea to impact</small></div></div>
       </aside>
       <main className="main-area">
         <header className="topbar">
-          <div className="crumb"><span>مساحة العمل</span><span className="crumb-sep">/</span><strong>لوحة المشروع</strong></div>
-          <div className="topbar-meta"><span className="live-dot" /> نسخة تجريبية محلية <span className="topbar-divider" /><span className="team-count"><Users size={15} /> {board.members.length} أعضاء</span></div>
+          <div className="crumb"><span>Workspace</span><span className="crumb-sep">/</span><strong>Project dashboard</strong></div>
+          <div className="topbar-meta"><span className="live-dot" /> Local demo <span className="topbar-divider" /><span className="team-count"><Users size={15} /> {board.members.length} {board.members.length === 1 ? 'member' : 'members'}</span></div>
         </header>
         <div className="content">
           <section className="page-heading">
-            <div className="heading-copy"><div className="eyebrow"><span className="eyebrow-line" /> هاكاثون الطلاب <span className="eyebrow-year">مساحة الفريق</span></div><h1>مرحباً بفريقكم<span className="heading-period">.</span></h1><p>رتّبوا العمل، وخلّوا كل خطوة واضحة للجميع.</p></div>
-            <div className="sprint-chip"><span className="sprint-icon"><Activity size={17} /></span><div><small>مرحلة العمل</small><strong>بناء النموذج الأولي</strong></div></div>
+            <div className="heading-copy"><div className="eyebrow"><span className="eyebrow-line" /> STUDENT HACKATHON <span className="eyebrow-year">TEAM WORKSPACE</span></div><h1>Welcome, team<span className="heading-period">.</span></h1><p>Bring your work together and keep every next step clear.</p></div>
+            <div className="sprint-chip"><span className="sprint-icon"><Activity size={17} /></span><div><small>Current phase</small><strong>Prototype build</strong></div></div>
           </section>
-          <section className="summary-grid" aria-label="ملخص المشروع">
-            <article className="summary-card summary-progress" data-testid="summary-progress"><div className="summary-top"><span>إنجاز المشروع</span><span className="summary-icon amber"><CheckCircle2 size={18} /></span></div><div className="summary-number">{progress}<small>%</small></div><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><div className="summary-foot"><span>{completed} من {board.tasks.length} مهام مكتملة</span><span className="summary-highlight">{progress}%</span></div></article>
-            <article className="summary-card" data-testid="summary-active"><div className="summary-top"><span>قيد التنفيذ</span><span className="summary-icon teal"><Activity size={18} /></span></div><div className="summary-number">{inProgress}<small> مهام</small></div><div className="summary-caption">تعمل عليها الآن</div><div className="summary-bottom-line teal-line" /></article>
-            <article className="summary-card" data-testid="summary-team"><div className="summary-top"><span>أعضاء الفريق</span><span className="summary-icon navy"><Users size={18} /></span></div><div className="summary-number">{board.members.length}<small> أعضاء</small></div><div className="summary-caption">فريق واحد، هدف مشترك</div><div className="summary-bottom-line navy-line" /></article>
+          <section className="summary-grid" aria-label="Project summary">
+            <article className="summary-card summary-progress" data-testid="summary-progress"><div className="summary-top"><span>Project completion</span><span className="summary-icon amber"><CheckCircle2 size={18} /></span></div><div className="summary-number">{progress}<small>%</small></div><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><div className="summary-foot"><span>{completed} of {board.tasks.length} tasks complete</span><span className="summary-highlight">{progress}%</span></div></article>
+            <article className="summary-card" data-testid="summary-active"><div className="summary-top"><span>In progress</span><span className="summary-icon teal"><Activity size={18} /></span></div><div className="summary-number">{inProgress}<small>{inProgress === 1 ? ' task' : ' tasks'}</small></div><div className="summary-caption">Work happening now</div><div className="summary-bottom-line teal-line" /></article>
+            <article className="summary-card" data-testid="summary-team"><div className="summary-top"><span>Team members</span><span className="summary-icon navy"><Users size={18} /></span></div><div className="summary-number">{board.members.length}<small>{board.members.length === 1 ? ' member' : ' members'}</small></div><div className="summary-caption">One team, one shared goal</div><div className="summary-bottom-line navy-line" /></article>
           </section>
           <div className="main-columns">
             <section className="panel project-panel">
-              <div className="panel-heading"><div className="section-icon"><ClipboardList size={19} /></div><div><h2>نبذة المشروع</h2><p>الفكرة التي يعمل عليها فريقكم</p></div><span className="demo-badge">مساحة تجريبية</span></div>
-              <label className="sr-only" htmlFor="project-description">وصف المشروع</label>
-              <textarea id="project-description" className="description-input" value={board.description} onChange={(event) => setBoard((current) => ({ ...current, description: event.target.value }))} placeholder="اكتبوا وصفاً مختصراً لفكرتكم..." data-testid="input-project-description" />
-              <div className="description-footer"><span><span className="save-dot" /> يُحفظ تلقائياً على هذا الجهاز</span><span>{board.description.length} حرفاً</span></div>
-              <div className="idea-note"><Sparkles size={17} /><p>الوصف هنا يساعد فريقكم على إبقاء الهدف واضحاً أثناء تنفيذ المهام.</p></div>
+              <div className="panel-heading"><div className="section-icon"><ClipboardList size={19} /></div><div><h2>Project brief</h2><p>The idea your team is working on</p></div><span className="demo-badge">Demo workspace</span></div>
+              <label className="sr-only" htmlFor="project-description">Project description</label>
+              <textarea id="project-description" className="description-input" value={board.description} onChange={(event) => setBoard((current) => ({ ...current, description: event.target.value }))} placeholder="Write a short summary of your idea..." data-testid="input-project-description" />
+              <div className="description-footer"><span><span className="save-dot" /> Saved on this device</span><span>{board.description.length} characters</span></div>
+              <div className="idea-note"><Sparkles size={17} /><p>Keep your goal visible while you work through each task.</p></div>
             </section>
             <section className="panel team-panel">
-              <div className="panel-heading"><div className="section-icon team-icon"><Users size={19} /></div><div><h2>أعضاء الفريق</h2><p>أضيفوا زملاءكم إلى مساحة العمل</p></div><span className="member-count">{board.members.length}</span></div>
+              <div className="panel-heading"><div className="section-icon team-icon"><Users size={19} /></div><div><h2>Team members</h2><p>Add your teammates to this workspace</p></div><span className="member-count">{board.members.length}</span></div>
               <form className="member-form" onSubmit={addMember} noValidate>
-                <label className="sr-only" htmlFor="member-name">اسم العضو الجديد</label>
-                <input id="member-name" value={memberInput} onChange={(event) => { setMemberInput(event.target.value); if (memberError) setMemberError(''); }} placeholder="اكتب اسم العضو" data-testid="input-member-name" aria-describedby={memberError ? 'member-error' : undefined} />
-                <button type="submit" className="add-button" data-testid="button-add-member"><Plus size={17} /><span>إضافة</span></button>
+                <label className="sr-only" htmlFor="member-name">New member name</label>
+                <input id="member-name" value={memberInput} onChange={(event) => { setMemberInput(event.target.value); if (memberError) setMemberError(''); }} placeholder="Enter a member name" data-testid="input-member-name" aria-describedby={memberError ? 'member-error' : undefined} />
+                <button type="submit" className="add-button" data-testid="button-add-member"><Plus size={17} /><span>Add</span></button>
               </form>
               {memberError && <p className="form-error" id="member-error" role="alert" data-testid="status-member-error">{memberError}</p>}
-              <div className="member-list" aria-label="قائمة أعضاء الفريق">
-                {board.members.length ? board.members.map((member, index) => <div className="member-row" key={`${member}-${index}`} data-testid={`row-member-${index}`}><span className={`avatar avatar-${index % 4}`}>{member.trim().charAt(0)}</span><span className="member-name">{member}</span><span className="member-role">{index === 0 ? 'قائد الفريق' : 'عضو'}</span><span className="member-active"><i /> نشط</span></div>) : <div className="empty-members"><Users size={20} /><strong>الفريق يبدأ من هنا</strong><span>أضيفوا أول عضو باستخدام الحقل أعلاه.</span></div>}
+              <div className="member-list" aria-label="Team member list">
+                {board.members.length ? board.members.map((member, index) => <div className="member-row" key={`${member}-${index}`} data-testid={`row-member-${index}`}><span className={`avatar avatar-${index % 4}`}>{member.trim().charAt(0)}</span><span className="member-name">{member}</span><span className="member-role">{index === 0 ? 'Team lead' : 'Member'}</span><span className="member-active"><i /> Active</span></div>) : <div className="empty-members"><Users size={20} /><strong>Your team starts here</strong><span>Add your first teammate using the field above.</span></div>}
               </div>
             </section>
           </div>
           <section className="panel tasks-panel">
             <div className="tasks-heading">
-              <div className="panel-heading task-title"><div className="section-icon task-icon"><ClipboardList size={19} /></div><div><h2>مهام المشروع</h2><p>تابعوا التقدم ووزّعوا المسؤوليات بوضوح</p></div></div>
-              <div className="task-heading-end"><span className="task-total">{board.tasks.length} مهام</span><button type="button" onClick={generateDemoTasks} className="generate-button" data-testid="button-generate-tasks"><WandSparkles size={16} /><span>توليد مهام تجريبية</span></button></div>
+              <div className="panel-heading task-title"><div className="section-icon task-icon"><ClipboardList size={19} /></div><div><h2>Project tasks</h2><p>Track progress and make ownership clear</p></div></div>
+              <div className="task-heading-end"><span className="task-total">{taskCountLabel}</span><button type="button" onClick={generateDemoTasks} className="generate-button" data-testid="button-generate-tasks"><WandSparkles size={16} /><span>Generate demo tasks</span></button></div>
             </div>
             {demoNote && <p className="demo-note" role="status" data-testid="status-demo-generation">{demoNote}</p>}
             {sortedTasks.length ? <div className="task-table">
-              <div className="table-head"><span>المهمة</span><span>المسؤول</span><span>الحالة</span></div>
+              <div className="table-head"><span>Task</span><span>Owner</span><span>Status</span></div>
               {sortedTasks.map((task, index) => <article className="task-row" key={task.id} data-testid={`row-task-${task.id}`}>
                 <div className="task-info"><span className={`task-index task-index-${index % 3}`}>{String(index + 1).padStart(2, '0')}</span><div><strong data-testid={`text-task-title-${task.id}`}>{task.title}</strong><small>{task.detail}</small></div></div>
-                <div className="task-owner"><span className={`avatar avatar-${Math.max(0, board.members.indexOf(task.owner)) % 4}`}>{task.owner ? task.owner.trim().charAt(0) : '?'}</span><label className="sr-only" htmlFor={`owner-${task.id}`}>المسؤول عن {task.title}</label><select id={`owner-${task.id}`} value={task.owner} onChange={(event) => setBoard((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === task.id ? { ...item, owner: event.target.value } : item) }))} data-testid={`select-owner-${task.id}`}><option value="">غير معيّن</option>{board.members.map((member, memberIndex) => <option value={member} key={`${member}-${memberIndex}`}>{member}</option>)}</select></div>
-                <div className="task-status"><span className={`status-pill ${task.status === 'مكتملة' ? 'status-done' : task.status === 'قيد التنفيذ' ? 'status-active' : 'status-waiting'}`} data-testid={`status-task-${task.id}`}><i />{task.status}</span><label className="sr-only" htmlFor={`status-${task.id}`}>حالة {task.title}</label><select id={`status-${task.id}`} value={task.status} onChange={(event) => setBoard((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === task.id ? { ...item, status: event.target.value as TaskStatus } : item) }))} data-testid={`select-status-${task.id}`} aria-label={`تغيير حالة ${task.title}`}><option value="قيد الانتظار">قيد الانتظار</option><option value="قيد التنفيذ">قيد التنفيذ</option><option value="مكتملة">مكتملة</option></select></div>
+                <div className="task-owner"><span className={`avatar avatar-${Math.max(0, board.members.indexOf(task.owner)) % 4}`}>{task.owner ? task.owner.trim().charAt(0) : '?'}</span><label className="sr-only" htmlFor={`owner-${task.id}`}>Assign {task.title}</label><select id={`owner-${task.id}`} value={task.owner} onChange={(event) => setBoard((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === task.id ? { ...item, owner: event.target.value } : item) }))} data-testid={`select-owner-${task.id}`}><option value="">Unassigned</option>{board.members.map((member, memberIndex) => <option value={member} key={`${member}-${memberIndex}`}>{member}</option>)}</select></div>
+                <div className="task-status"><span className={`status-pill ${task.status === 'Completed' ? 'status-done' : task.status === 'In progress' ? 'status-active' : 'status-waiting'}`} data-testid={`status-task-${task.id}`}><i />{task.status}</span><label className="sr-only" htmlFor={`status-${task.id}`}>Status for {task.title}</label><select id={`status-${task.id}`} value={task.status} onChange={(event) => setBoard((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === task.id ? { ...item, status: event.target.value as TaskStatus } : item) }))} data-testid={`select-status-${task.id}`} aria-label={`Change status for ${task.title}`}><option value="To do">To do</option><option value="In progress">In progress</option><option value="Completed">Completed</option></select></div>
               </article>)}
-            </div> : <div className="empty-tasks"><div className="empty-task-mark"><Circle size={24} /></div><strong>لا توجد مهام بعد</strong><p>استخدموا زر توليد المهام التجريبية لعرض خطوات مقترحة لمشروعكم.</p><button type="button" onClick={generateDemoTasks} className="empty-generate" data-testid="button-generate-empty"><WandSparkles size={16} /> توليد مهام تجريبية</button></div>}
-            <div className="tasks-footer"><span><Clock3 size={15} /> تتحدث المؤشرات تلقائياً عند تغيير الحالة</span><span><Check size={15} /> البيانات محفوظة محلياً</span></div>
+            </div> : <div className="empty-tasks"><div className="empty-task-mark"><Circle size={24} /></div><strong>No tasks yet</strong><p>Generate demo tasks to see suggested next steps for your project.</p><button type="button" onClick={generateDemoTasks} className="empty-generate" data-testid="button-generate-empty"><WandSparkles size={16} /> Generate demo tasks</button></div>}
+            <div className="tasks-footer"><span><Clock3 size={15} /> Dashboard updates when a status changes</span><span><Check size={15} /> Saved locally</span></div>
           </section>
-          <footer className="page-footer"><span>مساحة عمل تجريبية للهاكاثون</span><span>صُممت لتبقي الفريق على المسار</span></footer>
+          <footer className="page-footer"><span>Hackathon demo workspace</span><span>Made to keep your team moving</span></footer>
         </div>
       </main>
     </div>
