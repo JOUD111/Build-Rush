@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "لوحة تنظيم مشاريع الطلاب"
+description = "لوحة عربية للفرق الطلابية في الهاكاثون لإدارة المهام، تعيينها لأعضاء الفريق، ومتابعة تقدمها."
+version = "1.0.0"
+id = "artifacts/student-project-board"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18139
+
+[services.development]
+run = "pnpm --filter @workspace/student-project-board run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/student-project-board", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/student-project-board/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18139"
+BASE_PATH = "/"

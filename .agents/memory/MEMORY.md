@@ -1,0 +1,1 @@
+- [Student hackathon workflow](student-hackathon-workflow.md) — Students turn project briefs into team-assigned tasks and track progress.
